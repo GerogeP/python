@@ -1,0 +1,523 @@
+python库pydantic简易教程
+敏哥的利器搜罗
+敏哥的利器搜罗​
+搜罗各种实用、提高效率的软件工具
+26 人赞同了该文章
+一、简介
+pydantic 库是 python 中用于数据接口定义检查与设置管理的库。
+
+pydantic 在运行时强制执行类型提示，并在数据无效时提供友好的错误。
+
+它具有如下优点：
+
+与 IDE/linter 完美搭配，不需要学习新的模式，只是使用类型注解定义类的实例
+多用途，BaseSettings 既可以验证请求数据，也可以从环境变量中读取系统设置
+快速
+可以验证复杂结构
+可扩展，可以使用validator装饰器装饰的模型上的方法来扩展验证
+数据类集成，除了BaseModel，pydantic还提供了一个dataclass装饰器，它创建带有输入数据解析和验证的普通 Python 数据类。
+二、安装
+pip install pydantic
+要测试 pydantic 是否已编译，请运行：
+
+import pydantic
+print('compiled:', pydantic.compiled)
+支持使用dotenv文件获取配置，需要安装 python-dotenv
+
+pip install pydantic[dotenv]
+
+
+三、常见模型
+pydantic中定义对象都是通过模型的，你可以认为模型就是类型语言中的类型。
+
+1、BaseModel 基本模型
+
+from pydantic import BaseModel
+
+class User(BaseModel):
+    id: int
+    name = 'Jane Doe'
+上面的例子，定义了一个User模型，继承自BaseModel，有2个字段，id是一个整数并且是必需的，name是一个带有默认值的字符串并且不是必需的
+
+实例化使用：
+
+user = User(id='123')
+实例化将执行所有解析和验证，如果有错误则会触发 ValidationError 报错。
+
+模型具有以下属性：
+
+dict() 模型字段和值的字典
+json() JSON 字符串表示dict()
+copy() 模型的副本（默认为浅表副本）
+parse_obj() 使用dict解析数据
+parse_raw 将str或bytes并将其解析为json，然后将结果传递给parse_obj
+parse_file 文件路径，读取文件并将内容传递给parse_raw。如果content_type省略，则从文件的扩展名推断
+from_orm() 从ORM 对象创建模型
+schema() 返回模式的字典
+schema_json() 返回该字典的 JSON 字符串表示
+construct() 允许在没有验证的情况下创建模型
+__fields_set__ 初始化模型实例时设置的字段名称集
+__fields__ 模型字段的字典
+__config__ 模型的配置类
+
+
+2、递归模型
+
+可以使用模型本身作为注释中的类型来定义更复杂的数据结构。
+
+from typing import List
+from pydantic import BaseModel
+
+
+class Foo(BaseModel):
+    count: int
+    size: float = None
+
+
+class Bar(BaseModel):
+    apple = 'x'
+    banana = 'y'
+
+
+class Spam(BaseModel):
+    foo: Foo
+    bars: List[Bar]
+
+
+3、GenericModel 通用模型（泛型）：
+
+使用 typing.TypeVar 的实例作为参数，传递给 typing.Generic，然后在继承了pydantic.generics.GenericModel 的模型中使用：
+
+from typing import Generic, TypeVar, Optional, List
+
+from pydantic import BaseModel, validator, ValidationError
+from pydantic.generics import GenericModel
+
+DataT = TypeVar('DataT')
+
+
+class Error(BaseModel):
+    code: int
+    message: str
+
+
+class DataModel(BaseModel):
+    numbers: List[int]
+    people: List[str]
+
+
+class Response(GenericModel, Generic[DataT]):
+    data: Optional[DataT]
+    error: Optional[Error]
+
+    @validator('error', always=True)
+    def check_consistency(cls, v, values):
+        if v is not None and values['data'] is not None:
+            raise ValueError('must not provide both data and error')
+        if v is None and values.get('data') is None:
+            raise ValueError('must provide data or error')
+        return v
+
+
+data = DataModel(numbers=[1, 2, 3], people=[])
+error = Error(code=404, message='Not found')
+
+print(Response[int](data=1))
+#> data=1 error=None
+print(Response[str](data='value'))
+#> data='value' error=None
+print(Response[str](data='value').dict())
+#> {'data': 'value', 'error': None}
+print(Response[DataModel](data=data).dict())
+"""
+{
+    'data': {'numbers': [1, 2, 3], 'people': []},
+    'error': None,
+}
+"""
+print(Response[DataModel](error=error).dict())
+"""
+{
+    'data': None,
+    'error': {'code': 404, 'message': 'Not found'},
+}
+"""
+try:
+    Response[int](data='value')
+except ValidationError as e:
+    print(e)
+    """
+    2 validation errors for Response[int]
+    data
+      value is not a valid integer (type=type_error.integer)
+    error
+      must provide data or error (type=value_error)
+    """
+
+
+4、create_model 动态模型
+
+在某些情况下，直到运行时才知道模型的结构。为此 pydantic 提供了create_model允许动态创建模型的方法。
+
+from pydantic import BaseModel, create_model
+
+DynamicFoobarModel = create_model('DynamicFoobarModel', foo=(str, ...), bar=123)
+
+
+四、常用类型
+None，type(None)或Literal[None]只允许None值
+bool 布尔类型
+int 整数类型
+float 浮点数类型
+str 字符串类型
+bytes 字节类型
+list 允许list,tuple,set,frozenset,deque, 或生成器并转换为列表
+tuple 允许list,tuple,set,frozenset,deque, 或生成器并转换为元组
+dict 字典类型
+set 允许list,tuple,set,frozenset,deque, 或生成器和转换为集合；
+frozenset 允许list,tuple,set,frozenset,deque, 或生成器和强制转换为冻结集
+deque 允许list,tuple,set,frozenset,deque, 或生成器和强制转换为双端队列
+datetime 的date,datetime,time,timedelta 等日期类型
+typing 中的 Deque, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple, Union，Callable，Pattern等类型
+FilePath，文件路径
+DirectoryPath 目录路径
+EmailStr 电子邮件地址
+NameEmail 有效的电子邮件地址或格式
+PyObject 需要一个字符串并加载可在该虚线路径中导入的 python 对象；
+Color 颜色类型
+AnyUrl 任意网址
+SecretStr、SecretBytes 敏感信息，将被格式化为'**********'或''
+Json 类型
+PaymentCardNumber 支付卡类型
+约束类型，可以使用con*类型函数限制许多常见类型的值
+conlist
+item_type: Type[T]: 列表项的类型
+min_items: int = None: 列表中的最小项目数
+max_items: int = None: 列表中的最大项目数
+conset
+item_type: Type[T]: 设置项目的类型
+min_items: int = None: 集合中的最小项目数
+max_items: int = None: 集合中的最大项目数
+conint
+strict: bool = False: 控制类型强制
+gt: int = None: 强制整数大于设定值
+ge: int = None: 强制整数大于或等于设定值
+lt: int = None: 强制整数小于设定值
+le: int = None: 强制整数小于或等于设定值
+multiple_of: int = None: 强制整数为设定值的倍数
+confloat
+strict: bool = False: 控制类型强制
+gt: float = None: 强制浮点数大于设定值
+ge: float = None: 强制 float 大于或等于设定值
+lt: float = None: 强制浮点数小于设定值
+le: float = None: 强制 float 小于或等于设定值
+multiple_of: float = None: 强制 float 为设定值的倍数
+condecimal
+gt: Decimal = None: 强制十进制大于设定值
+ge: Decimal = None: 强制十进制大于或等于设定值
+lt: Decimal = None: 强制十进制小于设定值
+le: Decimal = None: 强制十进制小于或等于设定值
+max_digits: int = None: 小数点内的最大位数。它不包括小数点前的零或尾随的十进制零
+decimal_places: int = None: 允许的最大小数位数。它不包括尾随十进制零
+multiple_of: Decimal = None: 强制十进制为设定值的倍数
+constr
+strip_whitespace: bool = False: 删除前尾空格
+to_lower: bool = False: 将所有字符转为小写
+strict: bool = False: 控制类型强制
+min_length: int = None: 字符串的最小长度
+max_length: int = None: 字符串的最大长度
+curtail_length: int = None: 当字符串长度超过设定值时，将字符串长度缩小到设定值
+regex: str = None: 正则表达式来验证字符串
+conbytes
+strip_whitespace: bool = False: 删除前尾空格
+to_lower: bool = False: 将所有字符转为小写
+min_length: int = None: 字节串的最小长度
+max_length: int = None: 字节串的最大长度
+严格类型，您可以使用StrictStr，StrictBytes，StrictInt，StrictFloat，和StrictBool类型，以防止强制兼容类型
+
+
+五、验证器
+使用validator装饰器可以实现自定义验证和对象之间的复杂关系。
+
+from pydantic import BaseModel, ValidationError, validator
+
+
+class UserModel(BaseModel):
+    name: str
+    username: str
+    password1: str
+    password2: str
+
+    @validator('name')
+    def name_must_contain_space(cls, v):
+        if ' ' not in v:
+            raise ValueError('must contain a space')
+        return v.title()
+
+    @validator('password2')
+    def passwords_match(cls, v, values, **kwargs):
+        if 'password1' in values and v != values['password1']:
+            raise ValueError('passwords do not match')
+        return v
+
+    @validator('username')
+    def username_alphanumeric(cls, v):
+        assert v.isalnum(), 'must be alphanumeric'
+        return v
+
+
+user = UserModel(
+    name='samuel colvin',
+    username='scolvin',
+    password1='zxcvbn',
+    password2='zxcvbn',
+)
+print(user)
+#> name='Samuel Colvin' username='scolvin' password1='zxcvbn' password2='zxcvbn'
+
+try:
+    UserModel(
+        name='samuel',
+        username='scolvin',
+        password1='zxcvbn',
+        password2='zxcvbn2',
+    )
+except ValidationError as e:
+    print(e)
+    """
+    2 validation errors for UserModel
+    name
+      must contain a space (type=value_error)
+    password2
+      passwords do not match (type=value_error)
+    """
+关于验证器的一些注意事项：
+
+验证器是“类方法”，因此它们接收的第一个参数值是UserModel类，而不是UserModel
+第二个参数始终是要验证的字段值，可以随意命名
+单个验证器可以通过传递多个字段名称来应用于多个字段，也可以通过传递特殊值在所有字段上调用单个验证器'*'
+关键字参数pre将导致在其他验证之前调用验证器
+通过each_item=True将导致验证器被施加到单独的值（例如List，Dict，Set等），而不是整个对象
+from typing import List
+from pydantic import BaseModel, ValidationError, validator
+
+
+class ParentModel(BaseModel):
+    names: List[str]
+
+
+class ChildModel(ParentModel):
+    @validator('names', each_item=True)
+    def check_names_not_empty(cls, v):
+        assert v != '', 'Empty strings are not allowed.'
+        return v
+
+
+# This will NOT raise a ValidationError because the validator was not called
+try:
+    child = ChildModel(names=['Alice', 'Bob', 'Eve', ''])
+except ValidationError as e:
+    print(e)
+else:
+    print('No ValidationError caught.')
+    #> No ValidationError caught.
+
+
+class ChildModel2(ParentModel):
+    @validator('names')
+    def check_names_not_empty(cls, v):
+        for name in v:
+            assert name != '', 'Empty strings are not allowed.'
+        return v
+
+
+try:
+    child = ChildModel2(names=['Alice', 'Bob', 'Eve', ''])
+except ValidationError as e:
+    print(e)
+    """
+    1 validation error for ChildModel2
+    names
+      Empty strings are not allowed. (type=assertion_error)
+    """
+关键字参数 always 将导致始终验证，出于性能原因，默认情况下，当未提供值时，不会为字段调用验证器。然而，在某些情况下，始终调用验证器可能很有用或需要，例如设置动态默认值。
+allow_reuse 可以在多个字段/模型上使用相同的验证器
+from pydantic import BaseModel, validator
+
+
+def normalize(name: str) -> str:
+    return ' '.join((word.capitalize()) for word in name.split(' '))
+
+
+class Producer(BaseModel):
+    name: str
+
+    # validators
+    _normalize_name = validator('name', allow_reuse=True)(normalize)
+
+
+class Consumer(BaseModel):
+    name: str
+
+    # validators
+    _normalize_name = validator('name', allow_reuse=True)(normalize)
+
+
+六、配置
+如果您创建一个继承自BaseSettings的模型，模型初始化程序将尝试通过从环境中读取，来确定未作为关键字参数传递的任何字段的值。（如果未设置匹配的环境变量，则仍将使用默认值。）
+
+这使得很容易：
+
+创建明确定义、类型提示的应用程序配置类
+自动从环境变量中读取对配置的修改
+在需要的地方手动覆盖初始化程序中的特定设置（例如在单元测试中）
+from typing import Set
+
+from pydantic import (
+    BaseModel,
+    BaseSettings,
+    PyObject,
+    RedisDsn,
+    PostgresDsn,
+    Field,
+)
+
+
+class SubModel(BaseModel):
+    foo = 'bar'
+    apple = 1
+
+
+class Settings(BaseSettings):
+    auth_key: str
+    api_key: str = Field(..., env='my_api_key')
+
+    redis_dsn: RedisDsn = 'redis://user:pass@localhost:6379/1'
+    pg_dsn: PostgresDsn = 'postgres://user:pass@localhost:5432/foobar'
+
+    special_function: PyObject = 'math.cos'
+
+    # to override domains:
+    # export my_prefix_domains='["foo.com", "bar.com"]'
+    domains: Set[str] = set()
+
+    # to override more_settings:
+    # export my_prefix_more_settings='{"foo": "x", "apple": 1}'
+    more_settings: SubModel = SubModel()
+
+    class Config:
+        env_prefix = 'my_prefix_'  # defaults to no prefix, i.e. ""
+        fields = {
+            'auth_key': {
+                'env': 'my_auth_key',
+            },
+            'redis_dsn': {
+                'env': ['service_redis_dsn', 'redis_url']
+            }
+        }
+
+
+print(Settings().dict())
+"""
+{
+    'auth_key': 'xxx',
+    'api_key': 'xxx',
+    'redis_dsn': RedisDsn('redis://user:pass@localhost:6379/1',
+scheme='redis', user='user', password='pass', host='localhost',
+host_type='int_domain', port='6379', path='/1'),
+    'pg_dsn': PostgresDsn('postgres://user:pass@localhost:5432/foobar',
+scheme='postgres', user='user', password='pass', host='localhost',
+host_type='int_domain', port='5432', path='/foobar'),
+    'special_function': <built-in function cos>,
+    'domains': set(),
+    'more_settings': {'foo': 'bar', 'apple': 1},
+}
+"""
+支持 Dotenv 文件设置变量，pydantic 有两种方式加载它：
+
+class Settings(BaseSettings):
+    ...
+
+    class Config:
+        env_file = '.env'
+        env_file_encoding = 'utf-8'
+或者
+
+settings=Settings(_env_file='prod.env',_env_file_encoding='utf-8')
+即使使用 dotenv 文件，pydantic 仍会读取环境变量，环境变量将始终优先于从 dotenv 文件加载的值。
+
+pydantic 支持设置敏感信息文件，同样有2种方式加载：
+
+class Settings(BaseSettings):
+    ...
+    database_password: str
+
+    class Config:
+        secrets_dir = '/var/run'
+或者：
+
+settings = Settings(_secrets_dir='/var/run')
+即使使用 secrets 目录，pydantic仍会从 dotenv 文件或环境中读取环境变量，dotenv 文件和环境变量将始终优先于从 secrets 目录加载的值。
+
+
+
+七、与 mypy 一起使用
+关于mypy的用法，可以参考我之前写的这篇文章：
+
+青火：python静态类型检查器-mypy简易教程
+12 赞同 · 0 评论文章
+
+Pydantic 附带了一个 mypy 插件，向 mypy 添加了许多重要的特定于 pydantic 的功能，以提高其对代码进行类型检查的能力。
+
+例如以下脚本：
+
+from datetime import datetime
+from typing import List, Optional
+from pydantic import BaseModel, NoneStr
+
+
+class Model(BaseModel):
+    age: int
+    first_name = 'John'
+    last_name: NoneStr = None
+    signup_ts: Optional[datetime] = None
+    list_of_ints: List[int]
+
+
+m = Model(age=42, list_of_ints=[1, '2', b'3'])
+print(m.middle_name)  # not a model field!
+Model()  # will raise a validation error for age and list_of_ints
+在没有任何特殊配置的情况下，mypy 会捕获其中一个错误：
+
+13: error: "Model" has no attribute "middle_name"
+启用插件后，它会同时捕获：
+
+13: error: "Model" has no attribute "middle_name"
+16: error: Missing named argument "age" for "Model"
+16: error: Missing named argument "list_of_ints" for "Model"
+要启用该插件，只需添加pydantic.mypy到mypy 配置文件中的插件列表：
+
+[mypy]
+plugins = pydantic.mypy
+要更改插件设置的值，请​​在 mypy 配置文件中创建一个名为 的部分[pydantic-mypy]，并为要覆盖的设置添加键值对：
+
+[mypy]
+plugins = pydantic.mypy
+
+follow_imports = silent
+warn_redundant_casts = True
+warn_unused_ignores = True
+disallow_any_generics = True
+check_untyped_defs = True
+no_implicit_reexport = True
+
+# for strict mypy: (this is the tricky one :-))
+disallow_untyped_defs = True
+
+[pydantic-mypy]
+init_forbid_extra = True
+init_typed = True
+warn_required_dynamic_aliases = True
+warn_untyped_fields = True
+发布于 2021-07-21 15:14
+
