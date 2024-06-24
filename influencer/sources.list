@@ -1,0 +1,4 @@
+deb http://mirrors.tencentyun.com/debian bookworm main contrib non-free non-free-firmware
+deb-src http://mirrors.tencentyun.com/debian bookworm main contrib non-free non-free-firmware
+deb http://mirrors.tencentyun.com/debian bookworm-updates main contrib non-free non-free-firmware
+deb-src http://mirrors.tencentyun.com/debian bookworm-updates main contrib non-free non-free-firmware
