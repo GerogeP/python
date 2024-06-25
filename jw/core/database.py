@@ -10,8 +10,8 @@ from sqlalchemy.orm import sessionmaker
 # load_dotenv()
 
 # 从环境变量中获取 DB URL
- SQLALCHEMY_DATABASE_URL = os.getenv("PG_URL")
-SQLALCHEMY_DATABASE_URL = PG_URL
+SQLALCHEMY_DATABASE_URL = os.getenv("PG_URL")
+i#SQLALCHEMY_DATABASE_URL = PG_URL
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL, client_encoding="utf8")
 SessionLocal = sessionmaker(autoflush=True, bind=engine)
